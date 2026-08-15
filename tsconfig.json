@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "esnext",
+
+    "types": ["node"],
+
+    "sourceMap": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@entitie/*": ["./src/entitie/*.ts"],
+      "@gameset/*": ["./src/gameset/*.ts"],
+      "@network/*": ["./src/network/*.ts"],
+      "@players/*": ["./src/players/*.ts"],
+      "@systems/*": ["./src/systems/*.ts"]
+    },
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  }
+}

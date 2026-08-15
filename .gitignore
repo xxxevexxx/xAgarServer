@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+*.log
+logs/
+
+package-lock.json
+
+.env
+.env.*
+
+*.pem
+*.key
+*.crt
+sourceServerProject/keys/
+sourceServerProject/logs/
