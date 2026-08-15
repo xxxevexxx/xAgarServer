@@ -13,7 +13,7 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
+      "@/*": ["./src/*.ts"],
       "@entitie/*": ["./src/entitie/*.ts"],
       "@gameset/*": ["./src/gameset/*.ts"],
       "@network/*": ["./src/network/*.ts"],

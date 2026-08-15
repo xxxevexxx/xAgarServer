@@ -1,11 +1,16 @@
-import Player from "@players/Player";
+import Player from "@/GamePlayer";
 import NodeFood from "@entitie/NodeFood"
 import NodeVirus from "@entitie/NodeVirus"
 import NodeParent from "@entitie/NodeParent"
 import NodePlayer from "@entitie/NodePlayer"
 import NodeSource from "@entitie/NodeSource"
 import { WebSocketServer, WebSocket } from "ws"
+import type { IncomingMessage } from "node:http"
 
+
+import Databases from "@systems/Databases"
+import Guardings from "@systems/Guardings"
+import Movements from "@systems/Movements"
 
 class GameServer {
 
@@ -14,7 +19,7 @@ class GameServer {
   private _uptime: number
   private _running: boolean
 
-  private _players: Player[]
+  private _players: Set<Player> = new Set()
   private _gameMode: any
 
   private _lastNodeId: number
@@ -32,29 +37,39 @@ class GameServer {
   private movingNodesSource: Set<NodeSource> = new Set()
   private movingNodesPlayer: Set<NodePlayer> = new Set()
 
+  private _databases: Databases
+  private _guardings: Guardings
+  private _movements: Movements
+
   constructor() {
 
     this._uptime = 0
     this._running = false
 
-    this._players = [];
     this._gameMode = null
 
     this._lastNodeId = 1;
     this._lastPlayerId = 1;
 
+    this._databases = new Databases(this)
+    this._guardings = new Guardings(this)
+    this._movements = new Movements(this)
   }
 
   listen() {
-    this._server = new WebSocketServer({
-      port: 8080
-    });
+    this._server = new WebSocketServer({ port: 8080 });
 
     this._server.on("listening", () => {
       this.onServerRun();
     });
 
-    this._server.on("connection", (socket, request) => {
+    this._server.on("connection", (socket: WebSocket, request: IncomingMessage) => {
+      const guardStatus = this._guardings.check(socket, request)
+      if (guardStatus) {
+        new Player(this, socket)
+      } else {
+        socket.close()
+      }
 
     });
 
@@ -81,9 +96,13 @@ class GameServer {
     console.error(error)
   }
 
-  onPlayerJoin(player: Player) { }
+  onPlayerJoin(player: Player) {
+    this._players.add(player)
+  }
 
-  onPlayerLeft(player: Player) { }
+  onPlayerLeft(player: Player) {
+    this._players.delete(player)
+  }
 
   getNextNodeId() {
     if (this._lastNodeId > 2147483647) {
@@ -139,3 +158,6 @@ class GameServer {
 
   }
 }
+
+
+export default GameServer

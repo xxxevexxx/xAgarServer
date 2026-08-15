@@ -1,9 +1,13 @@
+import type { RawData, WebSocket } from "ws";
+import type GameServer from "./GameServer.js"
 
 
 export default class Player {
 
+  private readonly _core: GameServer;
+
   private _alive: boolean
-  private _socket: any
+  private _socket: WebSocket
 
   private _nowScore: number
   private _maxScore: number
@@ -25,14 +29,16 @@ export default class Player {
     width: number, height: number
   }
 
-  constructor(socket: any) {
+  constructor(core: GameServer, socket: WebSocket) {
+    this._core = core
+
     this._alive = false
     this._socket = socket
 
     this._nowScore = 0
     this._maxScore = 0
 
-    this._playerId = 0
+    this._playerId = core.getNextPlayerId()
     this._playerImg = 0
     this._playerName = ""
     this._playerColor = ""
@@ -48,6 +54,16 @@ export default class Player {
       leftX: 0, rightX: 0,
       width: 0, height: 0
     }
+
+    this._core.onPlayerJoin(this)
+
+    this._socket.on("message", (data: RawData) => {
+      this.message(data)
+    })
+
+    this._socket.on("close", () => {
+      this._core.onPlayerLeft(this)
+    })
   }
   get alive() {
     return this._alive
@@ -155,6 +171,10 @@ export default class Player {
     width: number, height: number
   }) {
     this._viewBox = value
+  }
+
+  message(data: RawData) {
+
   }
 
   update() {

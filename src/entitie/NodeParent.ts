@@ -14,6 +14,7 @@ export default abstract class NodeParent {
 
   private _moveEngineTicks: number
   private _moveEngineSpeed: number
+  private _moveEngineBoost: number
   private _moveEngineDecay: number
 
   constructor(player: any, nodeId: number, playerId: number) {
@@ -31,6 +32,7 @@ export default abstract class NodeParent {
 
     this._moveEngineTicks = 0;
     this._moveEngineSpeed = 0;
+    this._moveEngineBoost = 0;
     this._moveEngineDecay = .75;
   }
 
@@ -120,6 +122,14 @@ export default abstract class NodeParent {
 
   set moveEngineSpeed(value: number) {
     this._moveEngineSpeed = value
+  }
+
+  set moveEngineBoost(value: number) {
+    this._moveEngineBoost = value
+  }
+
+  get moveEngineBoost() {
+    return this._moveEngineBoost
   }
 
   set moveEngineDecay(value: number) {
