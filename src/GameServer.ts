@@ -4,13 +4,15 @@ import NodeVirus from "@entitie/NodeVirus"
 import NodeParent from "@entitie/NodeParent"
 import NodePlayer from "@entitie/NodePlayer"
 import NodeSource from "@entitie/NodeSource"
-import { WebSocketServer, WebSocket } from "ws"
-import type { IncomingMessage } from "node:http"
 
-
+import Commandes from "@systems/Commandes"
 import Databases from "@systems/Databases"
 import Guardings from "@systems/Guardings"
 import Movements from "@systems/Movements"
+
+import { WebSocketServer, WebSocket } from "ws"
+import type { IncomingMessage } from "node:http"
+
 
 class GameServer {
 
@@ -37,6 +39,7 @@ class GameServer {
   private movingNodesSource: Set<NodeSource> = new Set()
   private movingNodesPlayer: Set<NodePlayer> = new Set()
 
+  private _commandes: Commandes
   private _databases: Databases
   private _guardings: Guardings
   private _movements: Movements
@@ -51,6 +54,7 @@ class GameServer {
     this._lastNodeId = 1;
     this._lastPlayerId = 1;
 
+    this._commandes = new Commandes(this)
     this._databases = new Databases(this)
     this._guardings = new Guardings(this)
     this._movements = new Movements(this)
