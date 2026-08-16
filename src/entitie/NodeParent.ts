@@ -1,7 +1,10 @@
+import type Player from "@/entitie/anyEntitie/Player"
+
 export default abstract class NodeParent {
 
   private _alive: boolean
-  private _player: any
+  private _player: Player
+  private _killer: null | Player
 
   private _nodeId: number
   private _nodeType: number
@@ -17,9 +20,10 @@ export default abstract class NodeParent {
   private _moveEngineBoost: number
   private _moveEngineDecay: number
 
-  constructor(player: any, nodeId: number, playerId: number) {
+  constructor(player: Player, nodeId: number, playerId: number) {
     this._alive = false
     this._player = player
+    this._killer = null
 
     this._nodeId = nodeId
     this._nodeType = 0
@@ -50,6 +54,14 @@ export default abstract class NodeParent {
 
   set player(value: any) {
     this._player = value
+  }
+
+  get killer() {
+    return this._killer
+  }
+
+  set killer(value: any) {
+    this._killer = value
   }
 
   get nodeId() {

@@ -208,4 +208,3 @@ function unsafe (val, doUnesc) {
 var isInt = function(n) {
     return parseInt(n) === n;
 };
-

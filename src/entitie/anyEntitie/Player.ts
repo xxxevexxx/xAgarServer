@@ -1,5 +1,5 @@
 import type { RawData, WebSocket } from "ws";
-import type GameServer from "./GameServer.js"
+import type GameServer from "@/GameServer"
 
 
 export default class Player {
@@ -21,7 +21,6 @@ export default class Player {
   private _visibleNodes: any[]
 
   private _mouseTarget: { x: number, y: number }
-  private _cameraTarget: { x: number, y: number }
 
   private _viewBox: {
     topY: number, bottomY: number,
@@ -47,7 +46,6 @@ export default class Player {
     this._visibleNodes = []
 
     this._mouseTarget = { x: 0, y: 0 }
-    this._cameraTarget = { x: 0, y: 0 }
 
     this._viewBox = {
       topY: 0, bottomY: 0,
@@ -151,14 +149,6 @@ export default class Player {
 
   set mouseTarget(value: { x: number, y: number }) {
     this._mouseTarget = value
-  }
-
-  get cameraTarget() {
-    return this._cameraTarget
-  }
-
-  set cameraTarget(value: { x: number, y: number }) {
-    this._cameraTarget = value
   }
 
   get viewBox() {

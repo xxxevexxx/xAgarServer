@@ -1,6 +1,11 @@
-import GameMode from "@gameset/GameMode";
+import GameMode from "@gameset/GameMode"
+import type GameServer from "@/GameServer"
 
 
 export default class Experiment extends GameMode {
+
+  constructor(core: GameServer) {
+    super(core)
+  }
 
 }

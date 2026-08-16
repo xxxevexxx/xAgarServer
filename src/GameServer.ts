@@ -1,4 +1,4 @@
-import Player from "@/GamePlayer";
+import Player from "@/entitie/anyEntitie/Player"
 import NodeFood from "@entitie/NodeFood"
 import NodeVirus from "@entitie/NodeVirus"
 import NodeParent from "@entitie/NodeParent"
@@ -10,19 +10,28 @@ import Databases from "@systems/Databases"
 import Guardings from "@systems/Guardings"
 import Movements from "@systems/Movements"
 
+import type Controller from "@/Controller"
+import type GameMode from "@gameset/GameMode"
+import { performance } from "node:perf_hooks"
 import { WebSocketServer, WebSocket } from "ws"
 import type { IncomingMessage } from "node:http"
 
 
-class GameServer {
+export default class GameServer {
+
+  private _controller: Controller
 
   private _server!: WebSocketServer
 
   private _uptime: number
   private _running: boolean
+  private _loopTimer: NodeJS.Timeout | null = null
+  private _accumulator = 0
+  private _lastTime = 0
+  private _tickId = 0
 
   private _players: Set<Player> = new Set()
-  private _gameMode: any
+  private _gameMode: GameMode
 
   private _lastNodeId: number
   private _lastPlayerId: number
@@ -39,20 +48,27 @@ class GameServer {
   private movingNodesSource: Set<NodeSource> = new Set()
   private movingNodesPlayer: Set<NodePlayer> = new Set()
 
+  private _incomingEvents: Set<any>
+  private _outgoingEvents: Set<any>
+
   private _commandes: Commandes
   private _databases: Databases
   private _guardings: Guardings
   private _movements: Movements
 
-  constructor() {
+  constructor(controller: Controller) {
+    this._controller = controller
 
-    this._uptime = 0
+    this._uptime = performance.now()
     this._running = false
 
-    this._gameMode = null
+    this._gameMode = this._controller._gameMode
 
     this._lastNodeId = 1;
     this._lastPlayerId = 1;
+
+    this._incomingEvents = new Set()
+    this._outgoingEvents = new Set()
 
     this._commandes = new Commandes(this)
     this._databases = new Databases(this)
@@ -74,7 +90,6 @@ class GameServer {
       } else {
         socket.close()
       }
-
     });
 
     this._server.on("close", () => {
@@ -86,18 +101,76 @@ class GameServer {
     });
   }
 
-  onServerRun() {
+  startLoop() {
+    if (this._loopTimer) return
+    this.listen()
     this._running = true
+    this._accumulator = 0
+    this._lastTime = performance.now()
+
+    const frame = () => {
+      if (!this._running) {
+        this._loopTimer = null
+        return
+      }
+
+      const now = performance.now()
+      let delta = now - this._lastTime
+      this._lastTime = now
+
+      if (delta > 250) delta = 250
+
+      this._accumulator += delta
+
+      let ticks = 0
+      while (this._accumulator >= this._controller.tickMs && ticks < this._controller.tickMcu) {
+        this._accumulator -= this._controller.tickMs
+        this.tick()
+        ticks++
+      }
+
+      if (ticks === this._controller.tickMcu) {
+        this._accumulator = 0
+      }
+
+      const delay = Math.max(0, this._controller.tickMs - this._accumulator)
+      this._loopTimer = setTimeout(frame, delay)
+    }
+
+    this._loopTimer = setTimeout(frame, this._controller.tickMs)
+  }
+
+  stopLoop() {
+    this._running = false
+
+    if (this._loopTimer) {
+      clearTimeout(this._loopTimer)
+      this._loopTimer = null
+    }
+  }
+
+  private tick() {
+    this._tickId++;
+  }
+
+  private onServerRun() {
     console.log(`Server startup`)
   }
 
-  onServerEnd() {
-    this._running = false
+  private onServerEnd() {
     console.log(`Server shutdown`)
   }
 
-  onServerError(error: Error) {
+  private onServerError(error: Error) {
     console.error(error)
+  }
+
+  addIncomingEvents(event: any) {
+    this._incomingEvents.add(event)
+  }
+
+  addOutgoingEvents(event: any) {
+    this._outgoingEvents.add(event)
   }
 
   onPlayerJoin(player: Player) {
@@ -157,11 +230,4 @@ class GameServer {
   getRandomPosition(node: NodeParent) {
 
   }
-
-  update() {
-
-  }
 }
-
-
-export default GameServer

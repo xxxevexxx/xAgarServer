@@ -1,5 +1,5 @@
 import GameServer from "@/GameServer"
-import type Player from "@/GamePlayer"
+import type Player from "@/entitie/anyEntitie/Player"
 import type NodeParent from "@/entitie/NodeParent";
 
 
