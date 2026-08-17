@@ -1,0 +1,75 @@
+{
+  "tickRt": 20,
+  "tickMcu": 5,
+  "port": 20001,
+  "viewBase": 1024,
+  "gamemode": "Experiment",
+  "maxConnections": 64,
+  "world": {
+    "border": {
+      "Left": 0,
+      "Right": 25000,
+      "Top": 0,
+      "Bottom": 25000
+    },
+    "food": {
+      "spawnInterval": 20,
+      "spawnAmount": 10,
+      "startAmount": 100,
+      "minAmount": 250,
+      "maxAmount": 500,
+      "minMass": 1,
+      "maxMass": 1
+    },
+    "eject": {
+      "speed": 160,
+      "massLoss": 16,
+      "defaultMass": 12,
+      "spawnPlayer": 50
+    },
+    "virus": {
+      "spawnInterval": 20,
+      "spawnAmount": 10,
+      "startAmount": 0,
+      "minAmount": 15,
+      "maxAmount": 30,
+      "minMass": 100,
+      "maxMass": 170,
+      "feedAmount": 7
+    },
+    "source": {
+      "spawnInterval": 20,
+      "spawnAmount": 10,
+      "startAmount": 0,
+      "minAmount": 5,
+      "maxAmount": 5,
+      "minMass": 200,
+      "maxMass": 5000
+    },
+
+    "player": {
+      "minMass": 10,
+      "maxMass": 22500,
+      "startMass": 5000,
+      "playerMaxCells": 64,
+
+      "playerMinMassEject": 32,
+      "playerMinMassSplit": 36,
+      "playerSplitStartDistance": 1,
+
+      "playerRecombineSplitTime": 0.8,
+      "playerRecombineVirusTime": 0.8,
+      "playerRecombineRefreshAll": 0,
+
+      "playerIgnorCollisionSplitTime": 0,
+      "playerIgnorCollisionVirusTime": 0.8,
+      "playerIgnorCollisionRefreshAll": 0,
+
+      "playerSplitBoost": 1,
+      "playerSplitTicks": 32,
+      "playerSplitDecay": 0.85,
+
+      "playerMassDecayRate": 0.002
+    }
+  }
+}

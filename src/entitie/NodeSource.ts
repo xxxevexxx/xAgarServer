@@ -1,9 +1,10 @@
 import NodeParent from "@entitie/NodeParent"
+import type Player from "@/entitie/anyEntitie/Player"
 
 
 export default class NodeSource extends NodeParent {
 
-  constructor(player: any, nodeId: number, playerId: number) {
+  constructor(player: Player | null, nodeId: number, playerId: number) {
     super(player, nodeId, playerId)
     this.nodeType = 5
   }

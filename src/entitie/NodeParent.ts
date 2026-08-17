@@ -1,10 +1,16 @@
 import type Player from "@/entitie/anyEntitie/Player"
 
+const NODE_UPDATE_MASK = {
+  coords: 1 << 0,
+  mass: 1 << 1,
+} as const
+
+
 export default abstract class NodeParent {
 
   private _alive: boolean
-  private _player: Player
-  private _killer: null | Player
+  private _player: Player | null
+  private _killer: NodeParent | null
 
   private _nodeId: number
   private _nodeType: number
@@ -14,13 +20,14 @@ export default abstract class NodeParent {
   private _angle: number
   private _color: { r: number, g: number, b: number }
   private _coords: { x: number, y: number }
+  private _dirtyMask: number
 
   private _moveEngineTicks: number
   private _moveEngineSpeed: number
   private _moveEngineBoost: number
   private _moveEngineDecay: number
 
-  constructor(player: Player, nodeId: number, playerId: number) {
+  constructor(player: Player | null, nodeId: number, playerId: number) {
     this._alive = false
     this._player = player
     this._killer = null
@@ -33,6 +40,7 @@ export default abstract class NodeParent {
     this._angle = 0
     this._color = { r: 255, g: 255, b: 255 }
     this._coords = { x: 0, y: 0 }
+    this._dirtyMask = NODE_UPDATE_MASK.coords | NODE_UPDATE_MASK.mass
 
     this._moveEngineTicks = 0;
     this._moveEngineSpeed = 0;
@@ -52,7 +60,7 @@ export default abstract class NodeParent {
     return this._player
   }
 
-  set player(value: any) {
+  set player(value: Player | null) {
     this._player = value
   }
 
@@ -60,7 +68,7 @@ export default abstract class NodeParent {
     return this._killer
   }
 
-  set killer(value: any) {
+  set killer(value: NodeParent | null) {
     this._killer = value
   }
 
@@ -93,7 +101,9 @@ export default abstract class NodeParent {
   }
 
   set mass(value: number) {
+    if (this._mass === value) return
     this._mass = value
+    this._dirtyMask |= NODE_UPDATE_MASK.mass
   }
 
   get angle() {
@@ -117,7 +127,29 @@ export default abstract class NodeParent {
   }
 
   set coords(value: { x: number, y: number }) {
+    if (this._coords.x === value.x && this._coords.y === value.y) return
     this._coords = value
+    this._dirtyMask |= NODE_UPDATE_MASK.coords
+  }
+
+  get dirtyUpdate() {
+    return this._dirtyMask !== 0
+  }
+
+  set dirtyUpdate(value: boolean) {
+    this._dirtyMask = value ? NODE_UPDATE_MASK.coords | NODE_UPDATE_MASK.mass : 0
+  }
+
+  get dirtyMask() {
+    return this._dirtyMask
+  }
+
+  set dirtyMask(value: number) {
+    this._dirtyMask = value
+  }
+
+  get radius() {
+    return Math.ceil(Math.sqrt(100 * Math.max(0, this._mass)))
   }
 
   get moveEngineTicks() {

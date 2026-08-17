@@ -1,31 +1,29 @@
 import MainSocket from "@/MainSocket"
 import GameServer from "@/GameServer"
 import Experiment from "@gameset/Experiment"
+import Tournament from "@gameset/Tournament"
 import type GameMode from "@gameset/GameMode"
-import { readFileSync } from "node:fs"
+import { type Config, loadConfig } from "@/config"
 
-type Config = {
-  tickRt: number
-  tickMcu: number
-}
 
-// Точка входа, подключается к главному серверу деррижору и запускает сервер
 export default class Controller {
 
   private _socket!: MainSocket
   private _server!: GameServer
 
-  public _gameMode!: GameMode
+  public _config: Config
 
   public tickRt: number
-  public tickMs: number
   public tickMcu: number
+  public tickMs: number
+
+  public _gameMode!: GameMode
 
   constructor(config: Config) {
-    this._gameMode = new Experiment(this._server)
+    this._config = config
 
-    this.tickMcu = config.tickMcu
     this.tickRt = config.tickRt
+    this.tickMcu = config.tickMcu
     this.tickMs = 1000 / this.tickRt
   }
 
@@ -36,35 +34,29 @@ export default class Controller {
 
   startGameServer() {
     this._server = new GameServer(this)
+    this._gameMode = this.createGameMode(this._server)
+    this._server.setGameMode(this._gameMode)
+    this._gameMode.onRun()
     this._server.startLoop()
   }
 
   init() {
-    this.startMainSocket()
     this.startGameServer()
   }
-}
 
+  private createGameMode(server: GameServer): GameMode {
+    const mode = this._config.gamemode.toLowerCase()
 
-const loadConfig = (): Config => {
-  const configUrl = new URL("../config.json", import.meta.url)
-  const configRaw = readFileSync(configUrl, "utf-8").trim()
+    if (mode === "experiment") {
+      return new Experiment(server)
+    }
 
-  if (!configRaw) {
-    throw new Error("config.json is empty")
+    if (mode === "tournament") {
+      return new Tournament(server)
+    }
+
+    throw new Error(`Unknown gamemode: ${this._config.gamemode}`)
   }
-
-  const config = JSON.parse(configRaw) as Partial<Config>
-
-  if (typeof config.tickRt !== "number") {
-    throw new Error("config.json: tickRt must be a number")
-  }
-
-  if (typeof config.tickMcu !== "number") {
-    throw new Error("config.json: tickMcu must be a number")
-  }
-
-  return config as Config
 }
 
 

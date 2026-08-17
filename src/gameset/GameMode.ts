@@ -1,11 +1,12 @@
 import GameServer from "@/GameServer"
 import type Player from "@/entitie/anyEntitie/Player"
 import type NodeParent from "@/entitie/NodeParent";
+import NodePlayer from "@/entitie/NodePlayer";
 
 
 export default class GameMode {
 
-  private readonly _core: GameServer;
+  protected readonly _core: GameServer;
 
   constructor(core: GameServer) {
     this._core = core;
@@ -28,19 +29,39 @@ export default class GameMode {
   }
 
   onPlayerLeft(player: Player) {
-    // Called player left server
+    for (const node of Array.from(player.ownerNodes)) {
+      this._core.delNode(node)
+    }
   }
 
   onTick() {
     // Called on every game tick
   }
 
+  canPlayerSpawn(player: Player) {
+    return !this.hasPlayerCells(player)
+  }
+
+  canPlayerRespawn(player: Player) {
+    return this.canPlayerSpawn(player)
+  }
+
+  spawnCommand(player: Player): NodePlayer | null {
+    if (!this.canPlayerSpawn(player)) return null
+    return this._core.spawnPlayer(player)
+  }
+
+  respawnCommand(player: Player): NodePlayer | null {
+    if (!this.canPlayerRespawn(player)) return null
+    return this._core.spawnPlayer(player)
+  }
+
   ejectCommand(player: Player) {
-    // Called player press Eject
+    this._core.getMovements().ejectPlayer(player)
   };
 
   splitCommand(player: Player) {
-    // Called player press Split
+    this._core.getMovements().splitPlayer(player)
   };
 
   onNodeAdd(node: NodeParent) {
@@ -48,7 +69,14 @@ export default class GameMode {
   };
 
   onNodeDel(node: NodeParent) {
-    // Called when a player cell is removed
+    if (!(node instanceof NodePlayer)) return
+    if (!node.player) return
+    if (this.hasPlayerCells(node.player)) return
+
+    node.player.alive = false
+    if (node.killer) {
+      this.onPlayerDeath(node.player, node.killer)
+    }
   };
 
   onNodeMove(cell: NodeParent) {
@@ -57,6 +85,13 @@ export default class GameMode {
 
   onEnd() {
     // Called when a mode End
+  }
+
+  protected hasPlayerCells(player: Player) {
+    for (const node of player.ownerNodes) {
+      if (node instanceof NodePlayer) return true
+    }
+    return false
   }
 
 }

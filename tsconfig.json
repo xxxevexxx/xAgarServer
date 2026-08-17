@@ -11,7 +11,6 @@
 
     "sourceMap": true,
 
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*.ts"],
       "@entitie/*": ["./src/entitie/*.ts"],

@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xAgar test client</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      color: #e8edf2;
+      background: #14171c;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      height: 100vh;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #101318;
+      cursor: crosshair;
+    }
+
+    aside {
+      border-left: 1px solid #2b313a;
+      padding: 14px;
+      background: #191d23;
+      overflow: auto;
+    }
+
+    label {
+      display: block;
+      margin: 0 0 6px;
+      color: #aeb8c5;
+      font-size: 13px;
+    }
+
+    input {
+      width: 100%;
+      height: 34px;
+      margin-bottom: 10px;
+      border: 1px solid #39414d;
+      border-radius: 4px;
+      padding: 0 9px;
+      color: #e8edf2;
+      background: #11151b;
+      outline: none;
+    }
+
+    button {
+      height: 34px;
+      border: 1px solid #465160;
+      border-radius: 4px;
+      padding: 0 10px;
+      color: #e8edf2;
+      background: #252b34;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #303846;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .row button {
+      flex: 1;
+    }
+
+    .status {
+      margin-bottom: 12px;
+      padding: 8px;
+      border: 1px solid #39414d;
+      border-radius: 4px;
+      background: #11151b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre {
+      min-height: 260px;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid #39414d;
+      border-radius: 4px;
+      overflow: auto;
+      color: #cad3df;
+      background: #0c0f14;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <canvas id="scene"></canvas>
+    <aside>
+      <label for="url">WebSocket URL</label>
+      <input id="url" value="ws://localhost:20001">
+
+      <div class="row">
+        <button id="connect">Connect</button>
+        <button id="disconnect">Disconnect</button>
+      </div>
+
+      <div class="row">
+        <button id="spawn">Spawn</button>
+        <button id="respawn">Respawn</button>
+      </div>
+
+      <div class="row">
+        <button id="split">Split</button>
+        <button id="eject">Eject</button>
+      </div>
+
+      <div class="row">
+        <button id="autofly">Auto Fly</button>
+        <button id="resetTraffic">Reset Traffic</button>
+      </div>
+
+      <label for="zoom">Zoom</label>
+      <input id="zoom" type="range" min="0.25" max="4" step="0.05" value="1">
+
+      <div class="status" id="status"></div>
+      <pre id="log"></pre>
+    </aside>
+  </div>
+
+  <script>
+    const OPCODE = {
+      inc: {
+        login: 0,
+        spawn: 1,
+        mouse: 2,
+        split: 3,
+        eject: 4,
+        respawn: 5,
+        ping: 7,
+      },
+      out: {
+        setBorder: 10,
+        worldSnapshot: 11,
+        clearSnapshot: 16,
+        pong: 17,
+        playerCreate: 50,
+        playerUpdate: 51,
+        playerDelete: 52,
+        playerMeta: 53,
+        sourceCreate: 54,
+        sourceUpdate: 55,
+        sourceDelete: 56,
+        sourceMeta: 57,
+        virusCreate: 58,
+        virusUpdate: 59,
+        virusDelete: 60,
+        virusMeta: 61,
+        ejectCreate: 62,
+        ejectUpdate: 63,
+        ejectDelete: 64,
+        ejectMeta: 65,
+        foodCreate: 66,
+        foodUpdate: 67,
+        foodDelete: 68,
+        foodMeta: 69,
+      },
+    };
+
+    const UPDATE_MASK = {
+      coords: 1 << 0,
+      mass: 1 << 1,
+    };
+
+    const NODE_TYPE_BY_OPCODE = {
+      50: 1, 51: 1, 52: 1, 53: 1,
+      62: 2, 63: 2, 64: 2, 65: 2,
+      66: 3, 67: 3, 68: 3, 69: 3,
+      58: 4, 59: 4, 60: 4, 61: 4,
+      54: 5, 55: 5, 56: 5, 57: 5,
+    };
+
+    const NODE_LABEL = {
+      1: "player",
+      2: "eject",
+      3: "food",
+      4: "virus",
+      5: "source",
+    };
+
+    const canvas = document.getElementById("scene");
+    const ctx = canvas.getContext("2d");
+    const urlInput = document.getElementById("url");
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const zoomInput = document.getElementById("zoom");
+
+    let socket = null;
+    let mouseTarget = { x: 12500, y: 12500 };
+    let zoom = Number(zoomInput.value);
+    let packetCount = 0;
+    let actualTrafficBytes = 0;
+    let oldTrafficBytes = 0;
+    let messageDeleteCount = 0;
+    let autoFly = false;
+    let lastAutoFlySend = 0;
+    let lastOldTrafficTick = performance.now();
+    const nodes = new Map();
+    const renderNodes = new Map();
+    const logs = [];
+
+    function connect() {
+      disconnect();
+
+      socket = new WebSocket(urlInput.value);
+      socket.binaryType = "arraybuffer";
+
+      socket.addEventListener("open", () => {
+        writeLog("socket open");
+        updateStatus();
+      });
+
+      socket.addEventListener("close", () => {
+        writeLog("socket close");
+        updateStatus();
+      });
+
+      socket.addEventListener("error", () => {
+        writeLog("socket error");
+        updateStatus();
+      });
+
+      socket.addEventListener("message", async (event) => {
+        const buffer = event.data instanceof ArrayBuffer
+          ? event.data
+          : await event.data.arrayBuffer();
+        messageDeleteCount = 0;
+        readPackets(new Reader(buffer));
+        packetCount++;
+        actualTrafficBytes += buffer.byteLength;
+        if (messageDeleteCount) {
+          oldTrafficBytes += estimateOldDeleteBytes(messageDeleteCount);
+        }
+        updateStatus();
+      });
+    }
+
+    function disconnect() {
+      if (!socket) return;
+      socket.close();
+      socket = null;
+      updateStatus();
+    }
+
+    function sendOpcode(opcode) {
+      if (!isOpen()) return;
+      socket.send(Uint8Array.of(opcode));
+      writeLog(`send opcode ${opcode}`);
+    }
+
+    function sendCoords(opcode, silent = false) {
+      if (!isOpen()) return;
+      const buffer = new ArrayBuffer(12);
+      const view = new DataView(buffer);
+      view.setInt32(0, opcode, true);
+      view.setInt32(4, mouseTarget.x | 0, true);
+      view.setInt32(8, mouseTarget.y | 0, true);
+      socket.send(buffer);
+      if (!silent) {
+        writeLog(`send opcode ${opcode} coords ${mouseTarget.x | 0}, ${mouseTarget.y | 0}`);
+      }
+    }
+
+    function readPackets(reader) {
+      while (reader.left() > 0) {
+        readPacket(reader);
+      }
+    }
+
+    function readPacket(reader) {
+      const opcode = reader.u8();
+
+      if (opcode === OPCODE.out.clearSnapshot) {
+        nodes.clear();
+        renderNodes.clear();
+        writeLog("clearSnapshot");
+        return;
+      }
+
+      if (opcode === OPCODE.out.worldSnapshot) {
+        const count = reader.varUint();
+        for (let i = 0; i < count; i++) {
+          const node = readSnapshotNode(reader);
+          nodes.set(node.nodeId, node);
+          ensureRenderNode(node, true);
+        }
+        writeLog(`worldSnapshot nodes=${count}`);
+        return;
+      }
+
+      if (isCreateOpcode(opcode)) {
+        const count = reader.varUint();
+        for (let i = 0; i < count; i++) {
+          const node = readCreateNode(reader, NODE_TYPE_BY_OPCODE[opcode]);
+          nodes.set(node.nodeId, node);
+          ensureRenderNode(node, false);
+        }
+        writeLog(`${opcodeName(opcode)} count=${count}`);
+        return;
+      }
+
+      if (isUpdateOpcode(opcode)) {
+        const count = reader.varUint();
+        for (let i = 0; i < count; i++) {
+          readUpdateNode(reader);
+        }
+        writeLog(`${opcodeName(opcode)} count=${count}`);
+        return;
+      }
+
+      if (isDeleteOpcode(opcode)) {
+        const count = reader.varUint();
+        for (let i = 0; i < count; i++) {
+          markNodeDeleted(reader.varUint());
+        }
+        messageDeleteCount += count;
+        writeLog(`${opcodeName(opcode)} count=${count}`);
+        return;
+      }
+
+      if (isMetaOpcode(opcode)) {
+        const count = reader.varUint();
+        for (let i = 0; i < count; i++) {
+          readMetaNode(reader);
+        }
+        writeLog(`${opcodeName(opcode)} count=${count}`);
+        return;
+      }
+
+      writeLog(`unknown opcode ${opcode} bytesLeft=${reader.left()}`);
+      reader.skip(reader.left());
+    }
+
+    function readSnapshotNode(reader) {
+      const nodeType = reader.u8();
+      const nodeId = reader.varUint();
+      const playerId = reader.varUint();
+      const x = reader.u16();
+      const y = reader.u16();
+      const mass = reader.u32();
+      const color = reader.color();
+      const hasOwner = reader.u8() === 1;
+      const playerName = reader.string();
+      const playerImg = reader.varUint();
+      const playerColor = reader.string();
+
+      return { nodeType, nodeId, playerId, x, y, mass, color, hasOwner, playerName, playerImg, playerColor };
+    }
+
+    function readCreateNode(reader, nodeType) {
+      const nodeId = reader.varUint();
+      const playerId = reader.varUint();
+      const x = reader.u16();
+      const y = reader.u16();
+      const mass = reader.u32();
+      const color = reader.color();
+      return { nodeType, nodeId, playerId, x, y, mass, color, hasOwner: playerId > 0 };
+    }
+
+    function readUpdateNode(reader) {
+      const nodeId = reader.varUint();
+      const mask = reader.u8();
+      const node = nodes.get(nodeId);
+
+      if (!node) {
+        if (mask & UPDATE_MASK.coords) {
+          reader.u16();
+          reader.u16();
+        }
+        if (mask & UPDATE_MASK.mass) {
+          reader.u32();
+        }
+        return;
+      }
+
+      if (mask & UPDATE_MASK.coords) {
+        node.x = reader.u16();
+        node.y = reader.u16();
+      }
+      if (mask & UPDATE_MASK.mass) {
+        node.mass = reader.u32();
+      }
+    }
+
+    function readMetaNode(reader) {
+      const nodeId = reader.varUint();
+      const mask = reader.u8();
+      const playerId = reader.varUint();
+      const node = nodes.get(nodeId);
+
+      if (node) {
+        node.playerId = playerId;
+        node.hasOwner = playerId > 0;
+      }
+
+      if (mask & 1) {
+        const playerName = reader.string();
+        if (node) node.playerName = playerName;
+      }
+      if (mask & 2) {
+        const playerImg = reader.varUint();
+        if (node) node.playerImg = playerImg;
+      }
+      if (mask & 4) {
+        const playerColor = reader.string();
+        if (node) node.playerColor = playerColor;
+      }
+    }
+
+    function draw() {
+      resizeCanvas();
+      updateOldTrafficEstimate();
+      updateAutoFly();
+      updateRenderNodes();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const visible = Array.from(renderNodes.values());
+      const center = getViewCenter(visible);
+      const scale = getScale(visible);
+
+      drawGrid(center, scale);
+
+      for (const node of visible) {
+        const x = canvas.width / 2 + (node.renderX - center.x) * scale;
+        const y = canvas.height / 2 + (node.renderY - center.y) * scale;
+        const radius = Math.max(0, Math.sqrt(Math.max(0, node.renderMass) * 100) * scale);
+        if (radius < 0.5) continue;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgb(${node.color.r}, ${node.color.g}, ${node.color.b})`;
+        ctx.fill();
+        ctx.lineWidth = node.nodeType === 1 ? 2 : 1;
+        ctx.strokeStyle = node.hasOwner ? "#ffffff" : "#00000055";
+        ctx.stroke();
+
+        if (radius > 12) {
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "12px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText(`${NODE_LABEL[node.nodeType] || node.nodeType}:${node.nodeId}`, x, y + 4);
+        }
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    function drawGrid(center, scale) {
+      const step = 1000 * scale;
+      if (step < 12) return;
+      ctx.strokeStyle = "#222832";
+      ctx.lineWidth = 1;
+
+      const offsetX = canvas.width / 2 - center.x * scale;
+      const offsetY = canvas.height / 2 - center.y * scale;
+
+      for (let x = offsetX % step; x < canvas.width; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+
+      for (let y = offsetY % step; y < canvas.height; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+    }
+
+    function getViewCenter(visible) {
+      const players = visible.filter((node) => node.nodeType === 1 && node.hasOwner);
+      const source = players.length ? players : [];
+
+      if (!source.length) {
+        return { x: 12500, y: 12500 };
+      }
+
+      let x = 0;
+      let y = 0;
+      for (const node of source) {
+        x += node.renderX;
+        y += node.renderY;
+      }
+
+      return {
+        x: x / source.length,
+        y: y / source.length,
+      };
+    }
+
+    function getScale(visible) {
+      return 0.04 * zoom;
+    }
+
+    function ensureRenderNode(node, immediate) {
+      const exists = renderNodes.get(node.nodeId);
+      if (exists) {
+        Object.assign(exists, node, { deleted: false });
+        return exists;
+      }
+
+      const renderNode = {
+        ...node,
+        renderX: node.x,
+        renderY: node.y,
+        renderMass: immediate ? node.mass : 0,
+        deleted: false,
+      };
+      renderNodes.set(node.nodeId, renderNode);
+      return renderNode;
+    }
+
+    function markNodeDeleted(nodeId) {
+      nodes.delete(nodeId);
+      const renderNode = renderNodes.get(nodeId);
+      if (!renderNode) return;
+      renderNode.deleted = true;
+      renderNode.mass = 0;
+    }
+
+    function updateRenderNodes() {
+      for (const node of nodes.values()) {
+        const renderNode = ensureRenderNode(node, false);
+        Object.assign(renderNode, node, { deleted: false });
+      }
+
+      for (const [nodeId, renderNode] of renderNodes) {
+        const target = nodes.get(nodeId);
+        if (target) {
+          renderNode.x = target.x;
+          renderNode.y = target.y;
+          renderNode.mass = target.mass;
+          renderNode.color = target.color;
+          renderNode.nodeType = target.nodeType;
+          renderNode.playerId = target.playerId;
+          renderNode.hasOwner = target.hasOwner;
+        }
+
+        const positionLerp = renderNode.deleted ? 0.3 : 0.22;
+        const massLerp = renderNode.deleted ? 0.35 : 0.18;
+        renderNode.renderX += (renderNode.x - renderNode.renderX) * positionLerp;
+        renderNode.renderY += (renderNode.y - renderNode.renderY) * positionLerp;
+        renderNode.renderMass += (renderNode.mass - renderNode.renderMass) * massLerp;
+
+        if (renderNode.deleted && renderNode.renderMass < 0.05) {
+          renderNodes.delete(nodeId);
+        }
+      }
+    }
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(rect.width * dpr));
+      const height = Math.max(1, Math.floor(rect.height * dpr));
+
+      if (canvas.width === width && canvas.height === height) return;
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    function updateStatus() {
+      const counts = { player: 0, eject: 0, food: 0, virus: 0, source: 0 };
+      for (const node of renderNodes.values()) {
+        counts[NODE_LABEL[node.nodeType]]++;
+      }
+
+      statusEl.innerHTML = [
+        `socket: ${isOpen() ? "open" : "closed"}`,
+        `packets: ${packetCount}`,
+        `nodes: ${nodes.size} / render ${renderNodes.size}`,
+        `player: ${counts.player}, food: ${counts.food}, virus: ${counts.virus}, eject: ${counts.eject}, source: ${counts.source}`,
+        `zoom: ${zoom.toFixed(2)}x`,
+        `auto fly: ${autoFly ? "on" : "off"}`,
+        `traffic now: ${formatBytes(actualTrafficBytes)}`,
+        `traffic old est: ${formatBytes(oldTrafficBytes)}`,
+        `old / now: ${(actualTrafficBytes > 0 ? oldTrafficBytes / actualTrafficBytes : 0).toFixed(2)}x`,
+        `mouse: ${mouseTarget.x | 0}, ${mouseTarget.y | 0}`,
+      ].join("<br>");
+    }
+
+    function estimateOldWorldUpdateBytes(deletedCount) {
+      let foodCells = 0;
+      let virusCells = 0;
+      let playerCells = 0;
+
+      for (const node of nodes.values()) {
+        if (node.nodeType === 1) {
+          playerCells++;
+        } else if (node.nodeType === 2 || node.nodeType === 3) {
+          foodCells++;
+        } else if (node.nodeType === 4 || node.nodeType === 5) {
+          virusCells++;
+        }
+      }
+
+      return (
+        1 +
+        4 + deletedCount * 8 +
+        4 + foodCells * 11 +
+        4 + virusCells * 20 +
+        2 +
+        2 +
+        2 +
+        2 +
+        playerCells * 16 +
+        4 +
+        4 + deletedCount * 4
+      );
+    }
+
+    function estimateOldDeleteBytes(deletedCount) {
+      return deletedCount * 12;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    function resetTraffic() {
+      actualTrafficBytes = 0;
+      oldTrafficBytes = 0;
+      packetCount = 0;
+      lastOldTrafficTick = performance.now();
+      updateStatus();
+      writeLog("traffic reset");
+    }
+
+    function updateOldTrafficEstimate() {
+      if (!isOpen()) return;
+
+      const now = performance.now();
+      const tickMs = 50;
+      const ticks = Math.floor((now - lastOldTrafficTick) / tickMs);
+      if (ticks <= 0) return;
+
+      lastOldTrafficTick += ticks * tickMs;
+      oldTrafficBytes += estimateOldWorldUpdateBytes(0) * ticks;
+      updateStatus();
+    }
+
+    function updateAutoFly() {
+      if (!autoFly || !isOpen()) return;
+
+      const now = performance.now();
+      if (now - lastAutoFlySend < 50) return;
+      lastAutoFlySend = now;
+
+      const center = getViewCenter(Array.from(renderNodes.values()));
+      const radius = 1600;
+      const time = now / 1000;
+      mouseTarget = {
+        x: center.x + Math.cos(time * 0.8) * radius,
+        y: center.y + Math.sin(time * 0.8) * radius,
+      };
+      sendCoords(OPCODE.inc.mouse, true);
+      updateStatus();
+    }
+
+    function writeLog(message) {
+      const time = new Date().toLocaleTimeString();
+      logs.unshift(`[${time}] ${message}`);
+      logs.length = Math.min(logs.length, 120);
+      logEl.textContent = logs.join("\n");
+    }
+
+    function isOpen() {
+      return socket && socket.readyState === WebSocket.OPEN;
+    }
+
+    function isCreateOpcode(opcode) {
+      return opcode === 50 || opcode === 54 || opcode === 58 || opcode === 62 || opcode === 66;
+    }
+
+    function isUpdateOpcode(opcode) {
+      return opcode === 51 || opcode === 55 || opcode === 59 || opcode === 63 || opcode === 67;
+    }
+
+    function isDeleteOpcode(opcode) {
+      return opcode === 52 || opcode === 56 || opcode === 60 || opcode === 64 || opcode === 68;
+    }
+
+    function isMetaOpcode(opcode) {
+      return opcode === 53 || opcode === 57 || opcode === 61 || opcode === 65 || opcode === 69;
+    }
+
+    function opcodeName(opcode) {
+      for (const [groupName, group] of Object.entries(OPCODE)) {
+        for (const [name, value] of Object.entries(group)) {
+          if (value === opcode) return `${groupName}.${name}`;
+        }
+      }
+      return `opcode.${opcode}`;
+    }
+
+    class Reader {
+      constructor(buffer) {
+        this.view = new DataView(buffer);
+        this.offset = 0;
+        this.decoder = new TextDecoder();
+      }
+
+      left() {
+        return this.view.byteLength - this.offset;
+      }
+
+      u8() {
+        const value = this.view.getUint8(this.offset);
+        this.offset += 1;
+        return value;
+      }
+
+      u32() {
+        const value = this.view.getUint32(this.offset, true);
+        this.offset += 4;
+        return value;
+      }
+
+      u16() {
+        const value = this.view.getUint16(this.offset, true);
+        this.offset += 2;
+        return value;
+      }
+
+      i32() {
+        const value = this.view.getInt32(this.offset, true);
+        this.offset += 4;
+        return value;
+      }
+
+      varUint() {
+        let value = 0;
+        let shift = 0;
+
+        while (this.offset < this.view.byteLength) {
+          const byte = this.u8();
+          value |= (byte & 0x7f) << shift;
+          if ((byte & 0x80) === 0) return value >>> 0;
+          shift += 7;
+        }
+
+        return value >>> 0;
+      }
+
+      string() {
+        const length = this.varUint();
+        const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + this.offset, length);
+        this.offset += length;
+        return this.decoder.decode(bytes);
+      }
+
+      color() {
+        return {
+          r: this.u8(),
+          g: this.u8(),
+          b: this.u8(),
+        };
+      }
+
+      skip(length) {
+        this.offset = Math.min(this.view.byteLength, this.offset + length);
+      }
+    }
+
+    document.getElementById("connect").addEventListener("click", connect);
+    document.getElementById("disconnect").addEventListener("click", disconnect);
+    document.getElementById("spawn").addEventListener("click", () => sendOpcode(OPCODE.inc.spawn));
+    document.getElementById("respawn").addEventListener("click", () => sendOpcode(OPCODE.inc.respawn));
+    document.getElementById("split").addEventListener("click", () => sendCoords(OPCODE.inc.split));
+    document.getElementById("eject").addEventListener("click", () => sendCoords(OPCODE.inc.eject));
+    document.getElementById("autofly").addEventListener("click", () => {
+      autoFly = !autoFly;
+      updateStatus();
+      writeLog(`auto fly ${autoFly ? "on" : "off"}`);
+    });
+    document.getElementById("resetTraffic").addEventListener("click", resetTraffic);
+    zoomInput.addEventListener("input", () => {
+      zoom = Number(zoomInput.value);
+      updateStatus();
+    });
+
+    canvas.addEventListener("mousemove", (event) => {
+      const visible = Array.from(renderNodes.values());
+      const center = getViewCenter(visible);
+      const scale = getScale(visible);
+      const rect = canvas.getBoundingClientRect();
+      mouseTarget = {
+        x: center.x + (event.clientX - rect.left - rect.width / 2) / scale,
+        y: center.y + (event.clientY - rect.top - rect.height / 2) / scale,
+      };
+      sendCoords(OPCODE.inc.mouse, true);
+      updateStatus();
+    });
+
+    canvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const direction = event.deltaY < 0 ? 1 : -1;
+      zoom = Math.max(0.25, Math.min(4, zoom + direction * 0.1));
+      zoomInput.value = String(zoom);
+      updateStatus();
+    }, { passive: false });
+
+    window.addEventListener("keydown", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        sendCoords(OPCODE.inc.split);
+      }
+
+      if (event.code === "KeyW") {
+        event.preventDefault();
+        sendCoords(OPCODE.inc.eject);
+      }
+    });
+
+    updateStatus();
+    draw();
+  </script>
+</body>
+</html>
